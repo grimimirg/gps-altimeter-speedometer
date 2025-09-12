@@ -3,92 +3,106 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// --- DISPLAY DIMENSIONS ---
+// --- DISPLAY CONFIG ---
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-// --- DISPLAY CONFIG ---
+#define SDA 20
+#define SCL 21
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // --- GPS CONFIG ---
 TinyGPSPlus gps;
-HardwareSerial serialGPS(2);   // UART2 is usually used for GPS
+HardwareSerial serialGPS(2);   // UART number 2 is usually used for GPS
 
-// GPS receiver talks to the ESP32 on this pin
-#define RX 16
+// GPS receiver talks to the ESP32 on this pin via TX pin
+#define RX 48
 #define GPS_BAUD 9600
 
+#define LINE_HEIGHT 10
+
+int currentLine = 0;
+
+//--------------------------------------------------------------------------------------------------------
+
 void setup() {
-  Serial.begin(115200);
-  Serial.println("Starting...");
+  clearDisplay();
+  logLine("Starting...");
 
-  // Override of the standard pins for I2C
-  // !!! Verify that your ESP32 actually exposes GPIO20 and GPIO21 !!!
-  // If not, use other free pins like (4, 5) or (18, 19)
-  Wire.begin(20, 21); // SDA = 20, SCL = 21
+  logLine("Wiring display on SDA: " + String(SDA) + " SCL: " + String(SCL));
 
-  // Initialize display
+  /*
+   Override of the standard pins for I2C
+   SDA = 20
+   SCL = 21 
+  
+   NOTE! Please use SDA = 21 and SCL = 22 on non ESP32-S3
+  */
+  Wire.begin(SDA, SCL);
+
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.println("Display not found!");
-    display.display();
-    for (;;); // stop here if no display
+    logLine("Display not found!");
+    for (;;);
   }
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.println("Display found!");
-  display.display();
+  logLine("Display found!");
 
-  delay(1000);
-
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("Starting GPS...");
-  display.display();
-
-  // Start GPS (only RX pin used, TX not needed)
   serialGPS.begin(GPS_BAUD, SERIAL_8N1, RX, -1);
+  logLine("GPS started!");
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("GPS started!");
-  display.display();
-
-  delay(1000);
+  logLine("Setup complete.");
 }
 
 void loop() {
-  // Reads incoming data from the GPS module
   while (serialGPS.available() > 0) {
     gps.encode(serialGPS.read());
   }
 
-  if (gps.location.isUpdated()) {
-    double lat = gps.location.lat();
-    double lon = gps.location.lng();
+  clearDisplay();
 
-    // show data on the display
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.setTextSize(1);
-    display.println("GPS Position:");
-
-    display.setTextSize(1);
-    display.print("Lat: ");
-    display.println(lat, 6);
-    display.print("Lon: ");
-    display.println(lon, 6);
-
-    display.display();
-
-    // debug also on serial
-    Serial.print("Lat: "); Serial.print(lat, 6);
-    Serial.print("  Lon: "); Serial.println(lon, 6);
+  if (gps.location.isValid()) {
+    printLine("Lat: " + String(gps.location.lat(), 6), 0);
+    printLine("Lng: " + String(gps.location.lng(), 6), 1);
+    printLine("Alt: " + String(gps.altitude.meters()), 2);
+  } else {
+    printLine("Acquiring GPS", 0);
+    printLine("signal...", 1);
   }
+
+  refreshDisplay();
+
+  delay(500);
+}
+
+//--------------------------------------------------------------------------------------------------------
+
+void clearDisplay() {
+  display.clearDisplay();
+}
+
+void printLine(const String& text, int line, int size = 1) {
+  display.setCursor(0, line * LINE_HEIGHT * size);
+  display.setTextSize(size);
+  display.setTextColor(SSD1306_WHITE);
+  display.println(text);
+}
+
+void refreshDisplay() {
+  display.display();
+}
+
+// log methods
+void clearLog() {
+  display.clearDisplay();
+  currentLine = 0;
+}
+
+void logLine(const String& text, int size = 1) {
+  display.setCursor(0, currentLine * LINE_HEIGHT * size);
+  display.setTextSize(size);
+  display.setTextColor(SSD1306_WHITE);
+  display.println(text);
+  display.display();
+  currentLine++;
 }

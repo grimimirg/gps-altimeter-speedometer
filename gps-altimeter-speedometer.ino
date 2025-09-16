@@ -7,6 +7,11 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
+// Override of the standard pins for I2C
+// SDA = 20
+// SCL = 21 
+//
+// NOTE! Please use SDA = 21 and SCL = 22 on non ESP32-S3
 #define SDA 20
 #define SCL 21
 
@@ -24,58 +29,7 @@ HardwareSerial serialGPS(2);   // UART number 2 is usually used for GPS
 
 int currentLine = 0;
 
-//--------------------------------------------------------------------------------------------------------
-
-void setup() {
-  clearDisplay();
-  logLine("Starting...");
-
-  logLine("Wiring display on SDA: " + String(SDA) + " SCL: " + String(SCL));
-
-  /*
-   Override of the standard pins for I2C
-   SDA = 20
-   SCL = 21 
-  
-   NOTE! Please use SDA = 21 and SCL = 22 on non ESP32-S3
-  */
-  Wire.begin(SDA, SCL);
-
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    logLine("Display not found!");
-    for (;;);
-  }
-
-  logLine("Display found!");
-
-  serialGPS.begin(GPS_BAUD, SERIAL_8N1, RX, -1);
-  logLine("GPS started!");
-
-  logLine("Setup complete.");
-}
-
-void loop() {
-  while (serialGPS.available() > 0) {
-    gps.encode(serialGPS.read());
-  }
-
-  clearDisplay();
-
-  if (gps.location.isValid()) {
-    printLine("Lat: " + String(gps.location.lat(), 6), 0);
-    printLine("Lng: " + String(gps.location.lng(), 6), 1);
-    printLine("Alt: " + String(gps.altitude.meters()), 2);
-  } else {
-    printLine("Acquiring GPS", 0);
-    printLine("signal...", 1);
-  }
-
-  refreshDisplay();
-
-  delay(500);
-}
-
-//--------------------------------------------------------------------------------------------------------
+bool acqSignal = false;
 
 void clearDisplay() {
   display.clearDisplay();
@@ -106,3 +60,46 @@ void logLine(const String& text, int size = 1) {
   display.display();
   currentLine++;
 }
+
+//--------------------------------------------------------------------------------------------------------
+
+void setup() {
+  Serial.begin(115200);
+
+  Wire.begin(SDA, SCL);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("Display not found!");
+    for (;;);
+  }
+
+  clearLog();
+  logLine("Display found");
+
+  serialGPS.begin(GPS_BAUD, SERIAL_8N1, RX, -1);
+  logLine("GPS found");
+}
+
+void loop() {
+  while (serialGPS.available() > 0) {
+    gps.encode(serialGPS.read());
+  }
+
+  if (gps.location.isValid()) {
+    clearDisplay();
+
+    printLine("Lat: " + String(gps.location.lat(), 6), 0);
+    printLine("Lon: " + String(gps.location.lng(), 6), 1);
+    printLine("Alt: " + String(gps.altitude.meters()), 2);
+
+    refreshDisplay();
+  } else {
+    if (!acqSignal) {
+      acqSignal = true;
+      logLine("Acq. GPS signal...");
+    }
+  }
+
+  delay(500);
+}
+

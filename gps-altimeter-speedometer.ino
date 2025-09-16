@@ -2,16 +2,13 @@
 #include <TinyGPSPlus.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_BMP280.h>
+#include <SimpleKalmanFilter.h>
 
 // --- DISPLAY CONFIG ---
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-// Override of the standard pins for I2C
-// SDA = 20
-// SCL = 21 
-//
-// NOTE! Please use SDA = 21 and SCL = 22 on non ESP32-S3
 #define SDA 20
 #define SCL 21
 
@@ -19,18 +16,31 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 // --- GPS CONFIG ---
 TinyGPSPlus gps;
-HardwareSerial serialGPS(2);   // UART number 2 is usually used for GPS
+HardwareSerial serialGPS(2);
 
-// GPS receiver talks to the ESP32 on this pin via TX pin
 #define RX 48
 #define GPS_BAUD 9600
 
 #define LINE_HEIGHT 10
 
-int currentLine = 0;
+// --- BAROMETRO CONFIG ---
+Adafruit_BMP280 bmp; // I2C
+float baroAltitude = 0;
 
+// --- KALMAN FILTER CONFIG ---
+SimpleKalmanFilter kalmanAltitude(2, 2, 0.01);
+float gpsAltitude = 0;
+float fusedAltitude = 0;
+
+unsigned long lastGPSUpdate = 0;
+
+// Time lapse for corrections
+const unsigned long gpsUpdateInterval = 5000;
+
+int currentLine = 0;
 bool acqSignal = false;
 
+// --- DISPLAY UTILS ---
 void clearDisplay() {
   display.clearDisplay();
 }
@@ -46,7 +56,6 @@ void refreshDisplay() {
   display.display();
 }
 
-// log methods
 void clearLog() {
   display.clearDisplay();
   currentLine = 0;
@@ -65,9 +74,9 @@ void logLine(const String& text, int size = 1) {
 
 void setup() {
   Serial.begin(115200);
-
   Wire.begin(SDA, SCL);
 
+  // --- DISPLAY ---
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("Display not found!");
     for (;;);
@@ -76,30 +85,56 @@ void setup() {
   clearLog();
   logLine("Display found");
 
+  // --- GPS ---
   serialGPS.begin(GPS_BAUD, SERIAL_8N1, RX, -1);
   logLine("GPS found");
+
+  // --- Barometer ---
+  if (!bmp.begin(0x76)) {
+    logLine("Barometer not found");
+    while (1);
+  }
+
+  logLine("BMP280 found");
 }
 
 void loop() {
+  // --- Read from GPS ---
   while (serialGPS.available() > 0) {
     gps.encode(serialGPS.read());
   }
 
   if (gps.location.isValid()) {
-    clearDisplay();
+    gpsAltitude = gps.altitude.meters();
+  }
 
+  // --- Read from Barometer ---
+  baroAltitude = bmp.readAltitude(1013.25);
+
+  fusedAltitude = kalmanAltitude.updateEstimate(baroAltitude);
+
+  // --- GPS correction ---
+  if (millis() - lastGPSUpdate > gpsUpdateInterval && gps.altitude.isValid()) {
+    float correction = 0.2 * (gpsAltitude - fusedAltitude);
+    fusedAltitude += correction;
+    lastGPSUpdate = millis();
+  }
+
+  clearDisplay();
+
+  if (gps.location.isValid()) {
     printLine("Lat: " + String(gps.location.lat(), 6), 0);
     printLine("Lon: " + String(gps.location.lng(), 6), 1);
-    printLine("Alt: " + String(gps.altitude.meters()), 2);
-
-    refreshDisplay();
   } else {
-    if (!acqSignal) {
-      acqSignal = true;
-      logLine("Acq. GPS signal...");
-    }
+    printLine("Lat: --", 0);
+    printLine("Lon: --", 1);
   }
+  
+  printLine("Alt GPS: " + String(gpsAltitude, 1) + " m", 2);
+  printLine("Alt Baro: " + String(baroAltitude, 1) + " m", 3);
+  printLine("Alt Fused: " + String(fusedAltitude, 1) + " m", 4);
+
+  refreshDisplay();
 
   delay(500);
 }
-

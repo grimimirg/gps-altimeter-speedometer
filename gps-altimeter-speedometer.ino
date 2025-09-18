@@ -2,7 +2,7 @@
 #include <TinyGPSPlus.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_BMP280.h>
+//#include <Adafruit_BMP280.h>
 #include <SimpleKalmanFilter.h>
 
 // --- DISPLAY CONFIG ---
@@ -24,7 +24,7 @@ HardwareSerial serialGPS(2);
 #define LINE_HEIGHT 10
 
 // --- BAROMETRO CONFIG ---
-Adafruit_BMP280 bmp; // I2C
+//Adafruit_BMP280 bmp; // I2C
 float baroAltitude = 0;
 
 // --- KALMAN FILTER CONFIG ---
@@ -39,6 +39,12 @@ const unsigned long gpsUpdateInterval = 5000;
 
 int currentLine = 0;
 bool acqSignal = false;
+
+// --- SPEED ---
+double prevLat = 0.0;
+double prevLon = 0.0;
+
+long prevTime = 0;
 
 // --- DISPLAY UTILS ---
 void clearDisplay() {
@@ -90,12 +96,14 @@ void setup() {
   logLine("GPS found");
 
   // --- Barometer ---
-  if (!bmp.begin(0x76)) {
-    logLine("Barometer not found");
-    while (1);
-  }
+  //if (!bmp.begin(0x76)) {
+  //  logLine("Barometer not found");
+  //  while (1);
+  //}
+  //
+  //logLine("BMP280 found");
 
-  logLine("BMP280 found");
+  delay(4000);
 }
 
 void loop() {
@@ -109,16 +117,16 @@ void loop() {
   }
 
   // --- Read from Barometer ---
-  baroAltitude = bmp.readAltitude(1013.25);
+  //baroAltitude = bmp.readAltitude(1013.25);
 
-  fusedAltitude = kalmanAltitude.updateEstimate(baroAltitude);
+  //fusedAltitude = kalmanAltitude.updateEstimate(baroAltitude);
 
   // --- GPS correction ---
-  if (millis() - lastGPSUpdate > gpsUpdateInterval && gps.altitude.isValid()) {
-    float correction = 0.2 * (gpsAltitude - fusedAltitude);
-    fusedAltitude += correction;
-    lastGPSUpdate = millis();
-  }
+  //if (millis() - lastGPSUpdate > gpsUpdateInterval && gps.altitude.isValid()) {
+  //  float correction = 0.2 * (gpsAltitude - fusedAltitude);
+  //  fusedAltitude += correction;
+  //  lastGPSUpdate = millis();
+  //}
 
   clearDisplay();
 
@@ -131,8 +139,11 @@ void loop() {
   }
   
   printLine("Alt GPS: " + String(gpsAltitude, 1) + " m", 2);
-  printLine("Alt Baro: " + String(baroAltitude, 1) + " m", 3);
-  printLine("Alt Fused: " + String(fusedAltitude, 1) + " m", 4);
+  //printLine("Alt Baro: " + String(baroAltitude, 1) + " m", 3);
+  //printLine("Alt Fused: " + String(fusedAltitude, 1) + " m", 4);
+
+  float speed = gps.speed.kmph();
+  printLine("Speed: " + String(speed, 1) + " km/h", /*5*/3);
 
   refreshDisplay();
 
